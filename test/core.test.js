@@ -84,3 +84,16 @@ test('logs rotate without losing valid JSON records', () => {
     }
   } finally { removeTemporary(home); }
 });
+
+test('an active runtime reports an unconfigured lid and unavailable activity separately', () => {
+  const home = temporary();
+  const awake = { set() {}, powerStatus: () => ({ source: 'ac', battery: 100 }), idleSeconds: () => 60, pulse: () => false };
+  try {
+    const daemon = new KeepAwakeDaemon(home, { awake, tray: false, lidReader: () => ({ configured: false, policyBlocked: true, ac: 1, dc: 1 }) });
+    daemon.config = validateConfig({}); daemon.tick();
+    const status = daemon.getStatus();
+    assert.equal(status.active, true); assert.equal(status.lid.configured, false);
+    assert.equal(status.activity.state, 'unavailable'); assert.equal(status.pulses, 0);
+    assert.match(status.activity.message, /input desktop/);
+  } finally { removeTemporary(home); }
+});

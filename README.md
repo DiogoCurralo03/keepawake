@@ -24,7 +24,7 @@ With the usual Windows account permissions, installation does not require admini
 - Configures the current power plan to do nothing when the lid closes, on AC and battery power, after backing up the previous values.
 - Starts the application without a console window and **without elevation**.
 
-The application uses the Node.js installation that ran the installer. If you move or remove that Node.js installation, reinstall KeepAwake. Installing dependencies requires an internet connection. Run the same installer to update; settings and logs are preserved. The installer uses prebuilt native dependencies and verifies that they load before replacing a running installation.
+The application uses the Node.js installation that ran the installer. If you move or remove that Node.js installation, reinstall KeepAwake. Installing dependencies requires an internet connection. Run the same installer to update; settings and logs are preserved. The installer uses prebuilt native dependencies and verifies that they load before replacing a running installation. Lid configuration uses the documented Windows `powercfg.exe` command path used by the original setup; runtime power requests still use Koffi.
 
 If a policy or ACL restricts lid configuration, the installer reports that this step is pending. Run **only** `keepawake lid on` once from a terminal with the required permissions, then return to a regular terminal. Restoring the setting may require the same permissions. The daemon refuses to run as administrator. If you run the entire installer elevated, start KeepAwake afterward from a regular terminal.
 
@@ -63,6 +63,7 @@ keepawake startup status
 keepawake lid status
 keepawake lid off              # Restore the saved lid settings
 keepawake lid on               # Apply to the current power plan
+keepawake doctor --json        # Inspect configuration, policy checks, and failures
 keepawake status --json
 keepawake logs
 ```
@@ -80,6 +81,23 @@ Keeping a thread active does not replace the configured lid close action. Lid co
 On **Modern Standby** systems, especially on battery power with the display off or lid closed, Windows and firmware can limit power requests and suspend applications. Microsoft documents these [Modern Standby phases and limits](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/prepare-software-for-modern-standby) and the [scope of the execution-state API](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setthreadexecutionstate). Indefinite execution with the lid closed cannot be guaranteed on every device. Manual sleep, shutdown, sign-out, critical battery actions, thermal limits, and managed policies remain under Windows control. A process can still appear in Task Manager while its execution is suspended.
 
 The installer only changes the lid close action. It leaves hibernation, critical battery actions, physical power buttons, and lock/password policies intact. Keep the laptop properly ventilated when using it with the lid closed.
+
+## Diagnose a failed lid configuration
+
+`active: true` means that the runtime is requesting wakefulness. The separate `lid` status reports the current plan's AC/DC actions, policy checks, and whether lid configuration could be verified. The tray also warns when lid protection is not configured. Plan readback does not prove that firmware or every managed setting will allow indefinite operation with the lid closed.
+
+```powershell
+keepawake doctor --json
+keepawake lid on                    # Use powercfg, as in the original setup
+keepawake lid on --backend native   # Explicit comparison with the Win32 write API
+keepawake lid status
+```
+
+`doctor` is read-only. It reports the available backend, current plan values, policy checks, runtime activity state, and the last lid configuration result. Its application snapshot excludes the home directory, process/instance identifiers, and authentication token. Review any operating-system error text before sharing a report publicly.
+
+Windows error **1260** is a Group Policy restriction, distinct from access-denied error **5**. Failures identify the backend and operation, such as writing the AC lid action or applying the active power scheme. Re-running as administrator does not automatically override an enforced policy. The application does not remove policy keys or change Registry ACLs.
+
+Configuration is backed up before writing and verified afterward. An already-correct plan is not reactivated unnecessarily. A rejected first write does not force an unrelated active-plan change during rollback or uninstall; pending restoration applies remain journaled for retry.
 
 ## Uninstall
 
@@ -117,4 +135,4 @@ All maintained source code, comments, documentation, tests, and user-facing mess
 
 ## Recovery provenance
 
-The supplied .NET executables were decompiled with ILSpy. Recovered C# and executable hashes are in [`recovered/`](recovered/README.md). Original executables, scripts, and notes are preserved in the local `og/` archive, which is excluded from the repository and distribution. Local tools in `.tools/` are also excluded.
+The supplied .NET executables were decompiled with ILSpy. The original source and setup scripts were subsequently recovered from a privately supplied session history. The runtime logic and the external power configuration were separate: the latter used `powercfg`, while `regcheck.ps1` only read Registry values. Recovered-source notes and executable hashes are in [`recovered/`](recovered/README.md). Original executables, recovered historical scripts, and private session data remain in the local `og/` archive, excluded from the repository and distribution. Local tools in `.tools/` are also excluded.

@@ -18,10 +18,11 @@ export const defaultRoot = () => path.join(os.homedir(), '.keepawake');
 function execute(file, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, { windowsHide: true, stdio: 'inherit', ...options });
-    let output = '';
+    let output = '', stderr = '';
     child.stdout?.on('data', data => { output += data; });
+    child.stderr?.on('data', data => { stderr += data; });
     child.once('error', reject);
-    child.once('exit', code => code === 0 ? resolve(output) : reject(new Error(`${path.basename(file)} exited with code ${code}`)));
+    child.once('exit', code => code === 0 ? resolve(output) : reject(new Error(`${path.basename(file)} exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : ''}`)));
   });
 }
 
@@ -134,7 +135,7 @@ export async function performSetup(mode, options) {
       fs.mkdirSync(stage);
       // A filter selects Node's JS copy path, avoiding older Node 22 native
       // copyDir bugs with Unicode Windows paths (nodejs/node#61950).
-      for (const name of ['src', 'bin', 'scripts', 'recovered', 'AGENTS.md', 'package.json', 'package-lock.json', 'LICENSE', 'README.md']) fs.cpSync(path.join(source, name), path.join(stage, name), { recursive: true, filter: () => true });
+      for (const name of ['src', 'bin', 'scripts', 'recovered', 'AGENTS.md', 'CHANGELOG.md', 'package.json', 'package-lock.json', 'LICENSE', 'README.md']) fs.cpSync(path.join(source, name), path.join(stage, name), { recursive: true, filter: () => true });
       await execute(process.execPath, [npmCli(), 'ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: stage });
       await execute(process.execPath, [path.join(stage, 'scripts', 'probe.js')], { cwd: stage });
       await stopService(root);
@@ -165,8 +166,8 @@ export async function performSetup(mode, options) {
       }
       console.log(`KeepAwake ${pkg.version} installed in ${root}.\nStart at sign-in: ${options.startup ? 'enabled (standard user)' : 'disabled'}.`);
       if (options.lid) {
-        try { await execute(process.execPath, [path.join(app, 'scripts', 'power.js'), 'enable', root]); }
-        catch (error) { console.warn(`Installation completed, but lid configuration is still pending: ${error.message}\nRun keepawake lid on with the permissions required by Windows.`); }
+        try { console.log((await execute(process.execPath, [path.join(app, 'scripts', 'power.js'), 'enable', root], { stdio: ['ignore', 'pipe', 'pipe'] })).trim()); }
+        catch (error) { console.warn(`Installation completed, but lid-close protection is NOT configured: ${error.message}\nRun keepawake doctor --json to inspect the failure. Error 1260 identifies a policy restriction; error 5 identifies denied permission.`); }
       }
     } else if (mode === 'uninstall') {
       await stopService(root);

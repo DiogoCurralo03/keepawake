@@ -31,6 +31,12 @@ test('daemon accepts authenticated control, persists configuration and exits cle
   assert.equal(restarted.config.activity, false);
   const status = JSON.parse((await cli(home, ['status', '--json'])).stdout);
   assert.equal(status.pid, restarted.pid); assert.equal(status.running, true);
+  const diagnostics = JSON.parse((await cli(home, ['doctor', '--json'])).stdout);
+  assert.equal(diagnostics.application.version, restarted.version);
+  assert.equal(typeof diagnostics.lid.configured, 'boolean');
+  assert.equal('home' in diagnostics.application, false);
+  assert.equal('token' in diagnostics.application, false);
+  assert.equal((await request(home, 'refresh-power', {})).pid, restarted.pid);
 });
 
 test('simultaneous starts converge on one process and survive an abrupt crash', { timeout: 45000 }, async t => {

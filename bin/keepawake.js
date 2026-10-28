@@ -23,6 +23,7 @@ const help = `KeepAwake — Windows x64 / ARM64, Node.js 22+
   keepawake config interval 55    Minimum activity interval, in seconds
   keepawake startup on|off|status  Configure startup at Windows sign-in
   keepawake lid on|off|status      Configure or restore the lid close action
+  keepawake doctor [--json]       Diagnose lid settings, policies, and activity
   keepawake logs                  Show the log file path
   keepawake uninstall             Uninstall and restore saved lid settings
 
@@ -30,28 +31,37 @@ const help = `KeepAwake — Windows x64 / ARM64, Node.js 22+
   --no-tray           Start without a tray icon (optional for start/run)
   --json              Output structured JSON
   --version           Show the version
+  --backend powercfg|native  Configuration method for lid/doctor (default: powercfg)
 
 The application runs as a standard user. Only lid configuration may require
 administrator privileges, depending on Windows permissions and policies.`;
 
 async function main() {
-  let homeArg, json = false, tray = true;
+  let homeArg, json = false, tray = true, backend = 'powercfg', backendExplicit = false;
   const args = [];
   for (let i = 2; i < process.argv.length; i++) {
     const arg = process.argv[i];
     if (arg === '--home') { if (!process.argv[i + 1]) throw new Error('Missing value for --home.'); homeArg = process.argv[++i]; }
     else if (arg === '--json') json = true;
     else if (arg === '--no-tray') tray = false;
+    else if (arg === '--backend') {
+      backend = process.argv[++i]; backendExplicit = true;
+      if (!['powercfg', 'native'].includes(backend)) throw new Error('Use --backend powercfg or --backend native.');
+    }
     else if (arg === '--help' || arg === '-h') { console.log(help); return; }
     else if (arg === '--version' || arg === '-v') { console.log(JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url))).version); return; }
     else if (arg.startsWith('--')) throw new Error(`Unknown option: ${arg}`);
     else args.push(arg);
   }
   const home = resolveHome(homeArg), [command = 'status', ...rest] = args;
+  if (backendExplicit && !['lid', 'doctor'].includes(command)) throw new Error('--backend is only supported by lid and doctor.');
   const printStatus = status => {
     if (json) return console.log(JSON.stringify(status ? { running: true, ...status } : { running: false, home }, null, 2));
     if (!status) return console.log('KeepAwake is not running.');
-    console.log(`KeepAwake ${status.active ? 'active' : 'paused'} · PID ${status.pid} · standard user\nDisplay: ${status.config.display ? 'kept on' : 'Windows default'} · activity: ${status.config.activity ? `after ${status.config.interval}s of inactivity` : 'disabled'}\nPower: ${status.power.source === 'ac' ? 'AC power' : status.power.source === 'battery' ? `battery (${status.power.battery ?? '?'}%)` : 'unknown'}\n${home}`);
+    const lid = status.lid;
+    const lidSummary = !lid ? 'not checked' : lid.configured ? 'Do Nothing on AC and battery'
+      : lid.error ? lid.error.message : `${lid.actions?.ac || 'unknown'} on AC, ${lid.actions?.dc || 'unknown'} on battery${lid.policyBlocked ? ' (policy restricted)' : ''}; protection not verified`;
+    console.log(`KeepAwake ${status.active ? 'active' : 'paused'} · PID ${status.pid} · standard user\nDisplay request: ${status.config.display ? 'on' : 'Windows default'} · activity: ${status.config.activity ? `after ${status.config.interval}s of inactivity` : 'disabled'}\nPower: ${status.power.source === 'ac' ? 'AC power' : status.power.source === 'battery' ? `battery (${status.power.battery ?? '?'}%)` : 'unknown'}\nLid: ${lidSummary}\n${home}`);
   };
   if (command === 'run') {
     if (rest.length) throw new Error('run does not accept additional arguments.');
@@ -95,8 +105,25 @@ async function main() {
   } else if (command === 'lid') {
     if (rest.length > 1 || !['on', 'off', 'status'].includes(rest[0] || 'status')) throw new Error('Use lid on|off|status.');
     assertNotMaintaining(home);
-    const { stdout } = await promisify(execFile)(process.execPath, [fileURLToPath(new URL('../scripts/power.js', import.meta.url)), { on: 'enable', off: 'restore', status: 'status' }[rest[0] || 'status'], home], { windowsHide: true });
+    const { stdout } = await promisify(execFile)(process.execPath, [fileURLToPath(new URL('../scripts/power.js', import.meta.url)), { on: 'enable', off: 'restore', status: 'status' }[rest[0] || 'status'], home, backend], { windowsHide: true });
     console.log(stdout.trim());
+    if (rest[0] === 'on' || rest[0] === 'off') {
+      try { if (await getStatus(home)) await request(home, 'refresh-power', {}); } catch { /* Configuration result remains available to doctor. */ }
+    }
+  } else if (command === 'doctor') {
+    if (rest.length) throw new Error('doctor does not accept additional arguments.');
+    const { createPowerPolicyNative } = await import('../src/power-native.js');
+    const { buildDiagnostics } = await import('../src/diagnostics.js');
+    let status = null, connectionError = null;
+    try { status = await getStatus(home); } catch (error) { connectionError = error.message; }
+    const diagnostics = buildDiagnostics(home, status, createPowerPolicyNative({ backend }));
+    if (connectionError) diagnostics.warnings.unshift(`Runtime status unavailable: ${connectionError}`);
+    if (json) console.log(JSON.stringify(diagnostics, null, 2));
+    else {
+      console.log(`KeepAwake diagnostics\nRuntime: ${status ? (status.active ? 'active' : 'paused') : 'not running'}\nLid plan: AC ${diagnostics.lid.actions?.ac || 'unknown'}, battery ${diagnostics.lid.actions?.dc || 'unknown'}\nLid protection verified: ${diagnostics.lid.configured ? 'yes' : 'no'}\nConfiguration backend: ${backend}`);
+      for (const warning of diagnostics.warnings) console.log(`Warning: ${warning}`);
+      console.log('Use keepawake doctor --json for the complete diagnostic report.');
+    }
   } else if (command === 'uninstall') {
     if (rest.length) throw new Error('uninstall does not accept additional arguments.');
     const { runSetup } = await import('../src/setup.js');

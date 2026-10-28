@@ -15,7 +15,7 @@ const target = path.join(dist, `keepawake-${version}.zip`);
 const ps = value => "'" + value.replaceAll("'", "''") + "'";
 try {
   fs.mkdirSync(root);
-  for (const name of ['src', 'bin', 'scripts', 'test', 'recovered', '.github', 'AGENTS.md', '.gitattributes', '.gitignore', 'package.json', 'package-lock.json', 'README.md', 'LICENSE', 'install.cmd', 'uninstall.cmd']) fs.cpSync(path.join(source, name), path.join(root, name), { recursive: true, filter: () => true });
+  for (const name of ['src', 'bin', 'scripts', 'test', 'recovered', '.github', 'AGENTS.md', 'CHANGELOG.md', '.gitattributes', '.gitignore', 'package.json', 'package-lock.json', 'README.md', 'LICENSE', 'install.cmd', 'uninstall.cmd']) fs.cpSync(path.join(source, name), path.join(root, name), { recursive: true, filter: () => true });
   const script = `$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; Compress-Archive -LiteralPath ${ps(root)} -DestinationPath ${ps(target)} -Force`;
   execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { stdio: 'inherit', windowsHide: true });
   const hash = crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex');

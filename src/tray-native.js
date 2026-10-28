@@ -274,7 +274,8 @@ export class NativeTrayIcon {
   getTooltipText() {
     const st = this.server.getStatus();
     const power = st.power?.source === 'ac' ? 'AC power' : st.power?.source === 'battery' ? `battery ${st.power.battery ?? '?'}%` : 'unknown power source';
-    if (st.active) return `KeepAwake — active (${power})`;
+    const lidWarning = st.lid && !st.lid.configured ? (st.lid.policyBlocked ? '; lid policy restricted' : '; lid not configured') : '';
+    if (st.active) return `KeepAwake — active (${power}${lidWarning})`;
     const remaining = st.pausedUntil > 0 ? `, resumes in ${Math.max(1, Math.ceil((st.pausedUntil - Date.now()) / 60000))} min` : '';
     return `KeepAwake — paused${remaining}`;
   }
@@ -305,6 +306,11 @@ export class NativeTrayIcon {
     const statusTitle = this.getTooltipText();
 
     this.AppendMenuW(hMenu, MF_STRING | MF_GRAYED | MF_DISABLED, ID_STATUS, statusTitle);
+    if (st.lid && !st.lid.configured) {
+      const detail = st.lid.error ? `Lid check failed: ${st.lid.error.message}`
+        : `Lid plan: AC ${st.lid.actions?.ac || 'unknown'}, battery ${st.lid.actions?.dc || 'unknown'}`;
+      this.AppendMenuW(hMenu, MF_STRING | MF_GRAYED | MF_DISABLED, 0, detail.slice(0, 140));
+    }
     this.AppendMenuW(hMenu, MF_SEPARATOR, 0, null);
 
     this.AppendMenuW(hMenu, MF_STRING, ID_PAUSE_15M, 'Pause for 15 minutes');
