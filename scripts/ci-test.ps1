@@ -21,7 +21,7 @@ $stderr = Join-Path $env:RUNNER_TEMP ($accountName + '-stderr.log')
 $exitCode = 1
 
 try {
-    Add-LocalGroupMember -SID 'S-1-5-32-545' -Member $account.SID
+    Add-LocalGroupMember -SID 'S-1-5-32-545' -Member $account
     New-Item -ItemType Directory -Path $testTemp -Force | Out-Null
     # The test user needs source/runtime read access and a private writable temp
     # directory. It never joins the Administrators group.
